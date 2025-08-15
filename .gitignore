@@ -3,3 +3,4 @@ src/config/.env
 uploads/
 pnpm-lock.yaml
 public/
+.DS_Store
