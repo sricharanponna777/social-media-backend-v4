@@ -25,9 +25,7 @@ class StoryController {
                 mediaUrl,
                 req.body.mediaType,
                 req.body.caption,
-                req.body.location,
                 req.body.duration || 5,
-                req.body.pollType
             ]);
 
             // Get user's followers to notify them
