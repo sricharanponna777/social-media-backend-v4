@@ -1,7 +1,7 @@
 node_modules/
 src/config/.env
 uploads/
-pnpm-lock.yaml
+bun.lock
 public/
 .DS_Store
 src/queries
