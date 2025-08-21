@@ -1,5 +1,6 @@
 node_modules/
 src/config/.env
+src/queries/
 uploads/
 bun.lock
 public/
