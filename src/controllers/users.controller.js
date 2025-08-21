@@ -19,7 +19,7 @@ class UserController {
             const fullMobileNumber = countryCode ? `+${countryCode} ${mobileNumber}` : mobileNumber;
 
             // Create user
-            const result = await db.query(userQueries.CREATE_USER, [email, fullMobileNumber, username, passwordHash, firstName, lastName, profile.avatarUrl || null, profile.bio || null, profile.location || null, profile.website || null, profile.isPrivate || false]);
+            const result = await db.query(userQueries.CREATE_USER, [email, fullMobileNumber, username, passwordHash, firstName, lastName, profile.avatarUrl || null, profile.coverPhotoUrl || null, profile.bio || null, profile.location || null, profile.website || null, profile.isPrivate || false]);
 
             const user = result.rows[0];
 
@@ -106,7 +106,7 @@ class UserController {
     }
 
     async updateProfile(req, res) {
-        const { firstName, lastName, avatarUrl, bio, location, website, isPrivate } = req.body;
+        const { firstName, lastName, avatarUrl, coverPhotoUrl, bio, location, website, isPrivate } = req.body;
         
         try {
             const result = await db.query(userQueries.UPDATE_USER, [
@@ -114,6 +114,7 @@ class UserController {
                 firstName,
                 lastName,
                 avatarUrl,
+                coverPhotoUrl,
                 bio,
                 location,
                 website,

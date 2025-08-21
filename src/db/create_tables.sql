@@ -1044,6 +1044,7 @@ CASE
     ELSE (((first_name)::text || ' '::text) || (last_name)::text)
 END) STORED,
     avatar_url text,
+    cover_photo_url text,
     bio text,
     location character varying(100),
     website character varying(255),

@@ -16,7 +16,7 @@ class PostService extends BaseService {
                 WHERE follower_id = $1 AND status = 'accepted'
             )
             SELECT p.*, 
-                   u.username, u.full_name, u.avatar_url, u.is_verified,
+                   u.username, u.full_name, u.avatar_url, u.cover_photo_url, u.is_verified,
                    (
                        SELECT COUNT(*) FROM content_reactions cr
                        WHERE cr.content_type = 'post' AND cr.content_id = p.id
@@ -49,7 +49,7 @@ class PostService extends BaseService {
 
         const query = `
             SELECT p.*, 
-                   u.username, u.full_name, u.avatar_url, u.is_verified,
+                   u.username, u.full_name, u.avatar_url, u.cover_photo_url, u.is_verified,
                    (
                        SELECT COUNT(*) FROM content_reactions cr
                        WHERE cr.content_type = 'post' AND cr.content_id = p.id

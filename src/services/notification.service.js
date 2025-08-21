@@ -14,6 +14,7 @@ class NotificationService extends BaseService {
             SELECT n.*, 
                    a.username as actor_username, 
                    a.avatar_url as actor_avatar_url
+                   a.cover_photo_url as actor_cover_photo_url
             FROM notifications n
             LEFT JOIN users a ON a.id = n.actor_id
             WHERE n.user_id = $1

@@ -35,6 +35,10 @@ const userValidation = {
             .optional()
             .isURL()
             .withMessage('Invalid avatar URL'),
+        body('coverPhotoUrl')
+            .optional()
+            .isURL()
+            .withMessage('Invalid cover photo URL'),
         body('bio')
             .optional()
             .isLength({ max: 500 })
@@ -78,6 +82,10 @@ const userValidation = {
             .optional()
             .isURL()
             .withMessage('Invalid avatar URL'),
+        body('coverPhotoUrl')
+            .optional()
+            .isURL()
+            .withMessage('Invalid cover photo URL'),
         body('bio')
             .optional()
             .isLength({ max: 500 })
