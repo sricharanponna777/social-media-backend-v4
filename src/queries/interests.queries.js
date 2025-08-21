@@ -17,7 +17,7 @@ module.exports = {
     LIMIT $2 OFFSET $3
   `,
   GET_SUGGESTED_USERS: `
-    SELECT u.id, u.username, u.avatar_url
+    SELECT u.id, u.username, u.avatar_url, u.cover_photo_url
     FROM users u
     WHERE u.id != $1 AND u.deleted_at IS NULL
     ORDER BY u.created_at DESC

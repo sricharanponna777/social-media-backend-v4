@@ -139,7 +139,7 @@ class ReactionsController {
             // Get reactions with user info
             const result = await pool.query(
                 `SELECT cr.*, r.name as reaction_name, r.icon_url, 
-                        u.username, u.avatar_url
+                        u.username, u.avatar_url, u.cover_photo_url
                 FROM content_reactions cr
                 JOIN reactions r ON cr.reaction_id = r.id
                 JOIN users u ON cr.user_id = u.id

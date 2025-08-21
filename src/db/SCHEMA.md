@@ -8,7 +8,7 @@ This document outlines the business logic and data model for the social media pl
 ### User Management
 - **User Profiles**
   - Basic user information (email, username, mobile)
-  - Profile customization (avatar, bio, location, website)
+  - Profile customization (avatar, cover photo, bio, location, website)
   - Privacy settings (private/public accounts)
   - Account verification and moderation
   - Soft delete support for account recovery

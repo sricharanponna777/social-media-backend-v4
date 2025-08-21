@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS users (
         END
     ) STORED,
     avatar_url text,
+    cover_photo_url text,
     bio text,
     location varchar(100),
     website varchar(255),
