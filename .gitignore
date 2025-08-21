@@ -4,4 +4,3 @@ uploads/
 bun.lock
 public/
 .DS_Store
-src/queries
