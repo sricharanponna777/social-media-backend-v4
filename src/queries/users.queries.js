@@ -2,8 +2,8 @@ module.exports = {
   CREATE_USER: `
     INSERT INTO users (
       email, mobile_number, username, password_hash,
-      first_name, last_name, avatar_url, bio, location, website, is_private
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      first_name, last_name, avatar_url, cover_photo_url, bio, location, website, is_private
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
     RETURNING *
   `,
   GET_USER_BY_EMAIL: `
@@ -19,16 +19,17 @@ module.exports = {
     SET first_name = $2,
         last_name = $3,
         avatar_url = $4,
-        bio = $5,
-        location = $6,
-        website = $7,
-        is_private = $8,
+        cover_photo_url = $5,
+        bio = $6,
+        location = $7,
+        website = $8,
+        is_private = $9,
         updated_at = NOW()
     WHERE id = $1
     RETURNING *
   `,
   SEARCH_USERS: `
-    SELECT id, username, first_name, last_name, avatar_url
+    SELECT id, username, first_name, last_name, avatar_url, cover_photo_url
     FROM users
     WHERE (username ILIKE $1 OR full_name ILIKE $1)
       AND deleted_at IS NULL
