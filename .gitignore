@@ -4,4 +4,3 @@ uploads/
 pnpm-lock.yaml
 public/
 .DS_Store
-src/queries
