@@ -11,7 +11,8 @@ const userValidation = {
             .matches(/[\d\s\-()]{6,20}/)
             .withMessage('Invalid mobile number'),
         body('countryCode')
-            .matches(/\d{1,4}/),
+            .matches(/^\d{1,4}$/)
+            .withMessage('Country code must be 1-4 digits'),
         body('username')
             .isLength({ min: 3, max: 30 })
             .trim()
@@ -19,8 +20,9 @@ const userValidation = {
             .withMessage('Username must be between 3-30 characters and can only contain letters, numbers, and underscores'),
         body('password')
             .isLength({ min: 8 })
+            .withMessage('Password must be at least 8 characters')
             .matches(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d@$!%*#?&]{8,}$/)
-            .withMessage('Password must be at least 8 characters and contain at least one letter and one number'),
+            .withMessage('Password must contain at least one letter and one number'),
         body('firstName')
             .optional()
             .isLength({ min: 2, max: 50 })
@@ -63,8 +65,20 @@ const userValidation = {
             .normalizeEmail()
             .withMessage('Invalid email address'),
         body('password')
-            .exists()
+            .custom((value) => typeof value === 'string' && value.trim().length > 0)
             .withMessage('Password is required')
+    ],
+
+    verifyOtp: [
+        body('email')
+            .isEmail()
+            .normalizeEmail()
+            .withMessage('Invalid email address'),
+        body('otp')
+            .isLength({ min: 6, max: 6 })
+            .withMessage('OTP must be 6 digits')
+            .matches(/^\d{6}$/)
+            .withMessage('OTP must contain only numbers')
     ],
 
     updateProfile: [

@@ -187,7 +187,8 @@ CREATE TABLE posts (
     is_pinned boolean NOT NULL DEFAULT false,
     is_archived boolean NOT NULL DEFAULT false,
     comments_count integer NOT NULL DEFAULT 0,
-    likes_count integer NOT NULL DEFAULT 0,
+    upvotes_count integer NOT NULL DEFAULT 0,
+    downvotes_count integer NOT NULL DEFAULT 0,
     shares_count integer NOT NULL DEFAULT 0,
     created_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -213,6 +214,8 @@ CREATE TABLE post_comments (
     is_edited boolean NOT NULL DEFAULT false,
     is_pinned boolean NOT NULL DEFAULT false,
     replies_count integer NOT NULL DEFAULT 0,
+    upvotes_count integer NOT NULL DEFAULT 0,
+    downvotes_count integer NOT NULL DEFAULT 0,
     created_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at timestamp with time zone,
@@ -238,6 +241,8 @@ CREATE TABLE stories (
     is_highlighted boolean NOT NULL DEFAULT false,
     poll_type varchar(20),
     views_count integer NOT NULL DEFAULT 0,
+    upvotes_count integer NOT NULL DEFAULT 0,
+    downvotes_count integer NOT NULL DEFAULT 0,
     expires_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at timestamp with time zone,
@@ -289,7 +294,6 @@ CREATE TABLE follows (
 
 CREATE INDEX IF NOT EXISTS idx_follows_follower_id ON follows(follower_id);
 CREATE INDEX IF NOT EXISTS idx_follows_following_id ON follows(following_id);
-CREATE INDEX IF NOT EXISTS idx_follows_status ON follows(status);
 
 COMMENT ON TABLE follows IS 'User follow relationships';
 
@@ -396,43 +400,24 @@ CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at DESC) 
 
 -- Content Engagement
 
--- Reactions
-CREATE TABLE reactions (
-    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name varchar(50) NOT NULL UNIQUE,
-    icon_url text,
-    created_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT chk_reactions_name CHECK (name IN ('like', 'love', 'haha', 'wow', 'sad', 'angry'))
-);
-
-COMMENT ON TABLE reactions IS 'Available reaction types';
-
--- Content Reactions
-CREATE TABLE content_reactions (
+-- Content Votes (upvote/downvote)
+CREATE TABLE content_votes (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    reaction_id uuid NOT NULL REFERENCES reactions(id) ON DELETE CASCADE,
+    vote_type varchar(20) NOT NULL,
     content_type varchar(20) NOT NULL,
     content_id uuid NOT NULL,
     created_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, content_type, content_id),
-    CONSTRAINT chk_content_reactions_type CHECK (content_type IN ('post', 'comment', 'story', 'reel'))
+    CONSTRAINT chk_content_votes_type CHECK (content_type IN ('post', 'comment', 'story', 'reel')),
+    CONSTRAINT chk_content_votes_vote_type CHECK (vote_type IN ('upvote', 'downvote'))
 );
 
--- Insert standard reactions
-INSERT INTO reactions (name, icon_url) VALUES
-('like', '/icons/reactions/like.svg'),
-('love', '/icons/reactions/love.svg'),
-('haha', '/icons/reactions/haha.svg'),
-('wow', '/icons/reactions/wow.svg'),
-('sad', '/icons/reactions/sad.svg'),
-('angry', '/icons/reactions/angry.svg')
-ON CONFLICT (name) DO NOTHING;
+CREATE INDEX IF NOT EXISTS idx_content_votes_content ON content_votes(content_type, content_id, vote_type);
+CREATE INDEX IF NOT EXISTS idx_content_votes_user_id ON content_votes(user_id);
 
-CREATE INDEX IF NOT EXISTS idx_content_reactions_content ON content_reactions(content_type, content_id);
-CREATE INDEX IF NOT EXISTS idx_content_reactions_user_id ON content_reactions(user_id);
-
-COMMENT ON TABLE content_reactions IS 'All content reactions in one table';
+COMMENT ON TABLE content_votes IS 'All content votes (upvotes/downvotes) in one table';
 
 -- Notifications
 CREATE TABLE notifications (
@@ -447,7 +432,7 @@ CREATE TABLE notifications (
     created_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
     read_at timestamp with time zone,
     CONSTRAINT chk_notifications_type CHECK (type IN (
-        'follow_request', 'follow_accept', 
+        'friend_request', 'friend_request_accepted', 'friend_request_rejected', 'friend_removed', 'friend_blocked',
         'post_like', 'post_comment', 
         'comment_like', 'comment_reply',
         'message', 'mention', 
@@ -575,6 +560,8 @@ CREATE TABLE reels (
     music_artist_name varchar(255),
     views_count integer NOT NULL DEFAULT 0,
     comments_count integer NOT NULL DEFAULT 0,
+    upvotes_count integer NOT NULL DEFAULT 0,
+    downvotes_count integer NOT NULL DEFAULT 0,
     shares_count integer NOT NULL DEFAULT 0,
     is_original boolean NOT NULL DEFAULT true,
     original_reel_id uuid REFERENCES reels(id) ON DELETE SET NULL,
@@ -591,6 +578,7 @@ CREATE TABLE reel_comments (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
     reel_id uuid NOT NULL REFERENCES reels(id) ON DELETE CASCADE,
     user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    parent_id uuid REFERENCES reel_comments(id) ON DELETE CASCADE,
     content text NOT NULL,
     created_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -659,6 +647,11 @@ CREATE TRIGGER update_posts_updated_at
 
 CREATE TRIGGER update_post_comments_updated_at
     BEFORE UPDATE ON post_comments
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_content_votes_updated_at
+    BEFORE UPDATE ON content_votes
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
@@ -805,33 +798,66 @@ CREATE TRIGGER update_reel_comments_count_trigger
 
 
 
--- Content reactions counter
-CREATE OR REPLACE FUNCTION update_content_reactions_count() RETURNS TRIGGER AS $$
+-- Content votes counter
+CREATE OR REPLACE FUNCTION apply_content_vote_counter(
+    p_content_type varchar,
+    p_content_id uuid,
+    p_vote_type varchar,
+    p_delta integer
+) RETURNS void AS $$
 BEGIN
-    -- Handle different content types
+    IF p_content_type = 'post' THEN
+        IF p_vote_type = 'upvote' THEN
+            PERFORM update_counter('posts', 'id', p_content_id, 'upvotes_count', p_delta);
+        ELSE
+            PERFORM update_counter('posts', 'id', p_content_id, 'downvotes_count', p_delta);
+        END IF;
+    ELSIF p_content_type = 'comment' THEN
+        IF p_vote_type = 'upvote' THEN
+            PERFORM update_counter('post_comments', 'id', p_content_id, 'upvotes_count', p_delta);
+        ELSE
+            PERFORM update_counter('post_comments', 'id', p_content_id, 'downvotes_count', p_delta);
+        END IF;
+    ELSIF p_content_type = 'story' THEN
+        IF p_vote_type = 'upvote' THEN
+            PERFORM update_counter('stories', 'id', p_content_id, 'upvotes_count', p_delta);
+        ELSE
+            PERFORM update_counter('stories', 'id', p_content_id, 'downvotes_count', p_delta);
+        END IF;
+    ELSIF p_content_type = 'reel' THEN
+        IF p_vote_type = 'upvote' THEN
+            PERFORM update_counter('reels', 'id', p_content_id, 'upvotes_count', p_delta);
+        ELSE
+            PERFORM update_counter('reels', 'id', p_content_id, 'downvotes_count', p_delta);
+        END IF;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION update_content_votes_count() RETURNS TRIGGER AS $$
+BEGIN
     IF TG_OP = 'INSERT' THEN
-        IF NEW.content_type = 'post' THEN
-            PERFORM update_counter('posts', 'id', NEW.content_id, 'likes_count', 1);
-        -- Add other content types as needed
-        -- ELSIF NEW.content_type = 'comment' THEN
-        --    PERFORM update_counter('post_comments', 'id', NEW.content_id, 'likes_count', 1);
-        END IF;
+        PERFORM apply_content_vote_counter(NEW.content_type, NEW.content_id, NEW.vote_type, 1);
     ELSIF TG_OP = 'DELETE' THEN
-        IF OLD.content_type = 'post' THEN
-            PERFORM update_counter('posts', 'id', OLD.content_id, 'likes_count', -1);
-        -- Add other content types as needed
-        -- ELSIF OLD.content_type = 'comment' THEN
-        --    PERFORM update_counter('post_comments', 'id', OLD.content_id, 'likes_count', -1);
+        PERFORM apply_content_vote_counter(OLD.content_type, OLD.content_id, OLD.vote_type, -1);
+    ELSIF TG_OP = 'UPDATE' THEN
+        IF OLD.content_type = NEW.content_type
+           AND OLD.content_id = NEW.content_id
+           AND OLD.vote_type = NEW.vote_type THEN
+            RETURN NULL;
         END IF;
+
+        PERFORM apply_content_vote_counter(OLD.content_type, OLD.content_id, OLD.vote_type, -1);
+        PERFORM apply_content_vote_counter(NEW.content_type, NEW.content_id, NEW.vote_type, 1);
     END IF;
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER update_content_reactions_count_trigger
-    AFTER INSERT OR DELETE ON content_reactions
+CREATE TRIGGER update_content_votes_count_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON content_votes
     FOR EACH ROW
-    EXECUTE FUNCTION update_content_reactions_count();
+    EXECUTE FUNCTION update_content_votes_count();
 
 -- Affiliate clicks counter
 CREATE OR REPLACE FUNCTION update_affiliate_clicks_count() RETURNS TRIGGER AS $$
@@ -930,11 +956,9 @@ CREATE INDEX IF NOT EXISTS idx_posts_user_created ON posts(user_id, created_at D
 CREATE INDEX IF NOT EXISTS idx_stories_user_created ON stories(user_id, created_at DESC) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_reels_user_created ON reels(user_id, created_at DESC) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_content_reactions_user_content ON content_reactions(user_id, content_type, content_id);
+CREATE INDEX IF NOT EXISTS idx_content_votes_user_content ON content_votes(user_id, content_type, content_id);
 
 -- Add composite indexes for common queries
-CREATE INDEX IF NOT EXISTS idx_follows_follower_status ON follows(follower_id, status);
-CREATE INDEX IF NOT EXISTS idx_follows_following_status ON follows(following_id, status);
 CREATE INDEX IF NOT EXISTS idx_friends_user_status ON friends(user_id, status);
 
 -- Performance optimization indexes

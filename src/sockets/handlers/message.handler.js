@@ -6,7 +6,7 @@ function messageHandler(io, socket) {
     socket.on('send_message', async (data) => {
         try {
             const { conversationId, content, messageType, mediaUrl } = data;
-            
+
             // Save message to database
             const result = await db.query(messageQueries.CREATE_MESSAGE, [
                 conversationId,

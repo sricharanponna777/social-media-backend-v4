@@ -40,12 +40,6 @@ const messageValidation = [
     body('file').optional()
 ];
 
-const conversationValidation = [
-    body('recipients').isArray().notEmpty(),
-    body('recipients.*').isUUID(4),
-    body('title').optional().isString().trim()
-];
-
 // Notification validation chains
 const notificationValidation = {
     markRead: [
@@ -83,10 +77,6 @@ const storyValidation = {
         body('poll.duration').optional().isInt({ min: 300, max: 86400 }), // 5 minutes to 24 hours
         validate
     ],
-    view: [
-        body('storyId').isUUID(4),
-        validate
-    ]
 };
 
 // Export validation middleware
@@ -97,7 +87,6 @@ module.exports = {
     validatePost: [...postValidation, validate],
     validateMessage: {
         message: [...messageValidation, validate],
-        conversation: [...conversationValidation, validate]
     },
     validateNotification: notificationValidation,
     validateStory: storyValidation

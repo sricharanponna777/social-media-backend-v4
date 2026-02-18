@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const StoryController = require('../controllers/stories.controller');
+const VotesController = require('../controllers/votes.controller');
 const { authenticate } = require('../middleware/auth.middleware');
 const { validateStory } = require('../middleware/validation.middleware');
 const fileService = require('../services/file.service');
@@ -26,7 +27,6 @@ router.get('/:id', StoryController.getStory);
 
 // View a story
 router.post('/:storyId/view',
-    validateStory.view,
     StoryController.viewStory
 );
 
@@ -35,5 +35,18 @@ router.get('/:id/stats', StoryController.getStoryStats);
 
 // Delete story
 router.delete('/:id', StoryController.deleteStory);
+
+// Votes endpoint for stories
+router.post('/:id/votes', (req, res, next) => {
+    req.body.content_type = 'story';
+    req.body.content_id = req.params.id;
+    return VotesController.addVote(req, res, next);
+});
+// Legacy alias for old clients
+router.post('/:id/reactions', (req, res, next) => {
+    req.body.content_type = 'story';
+    req.body.content_id = req.params.id;
+    return VotesController.addVote(req, res, next);
+});
 
 module.exports = router;

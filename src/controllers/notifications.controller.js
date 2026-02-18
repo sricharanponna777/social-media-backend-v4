@@ -8,13 +8,17 @@ class NotificationController {
         const offset = (page - 1) * limit;
 
         try {
-            const result = await db.query(notificationQueries.GET_NOTIFICATIONS, [
+            // Single query returns page of notifications + unread count
+            const result = await db.query(notificationQueries.GET_NOTIFICATIONS_WITH_UNREAD, [
                 req.user.id,
                 limit,
                 offset
             ]);
 
-            res.json(result.rows);
+            const unreadCount = result.rows.length ? (result.rows[0].unread_count || 0) : 0;
+            const notifications = result.rows.map(({ unread_count, ...row }) => row);
+
+            res.json({ notifications, unreadCount, page, limit });
         } catch (error) {
             res.status(500).json({ error: error.message });
         }

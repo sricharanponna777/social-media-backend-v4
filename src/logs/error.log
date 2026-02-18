@@ -1,0 +1,40 @@
+{"level":"error","message":"Error getting reactions: invalid input syntax for type uuid: \"d1vvmo6la6s\"","timestamp":"2025-09-02 23:37:51"}
+{"level":"error","message":"Error getting reactions: invalid input syntax for type uuid: \"bcpfub1b1ku\"","timestamp":"2025-09-02 23:37:59"}
+{"level":"error","message":"Error getting reactions: invalid input syntax for type uuid: \"d1vvmo6la6s\"","timestamp":"2025-09-02 23:37:59"}
+{"level":"error","message":"Error getting reactions: invalid input syntax for type uuid: \"bcpfub1b1ku\"","timestamp":"2025-09-02 23:38:03"}
+{"level":"error","message":"Error adding reaction: invalid input syntax for type uuid: \"bcpfub1b1ku\"","timestamp":"2025-09-02 23:38:03"}
+{"level":"error","message":"Error getting reactions: invalid input syntax for type uuid: \"bcpfub1b1ku\"","timestamp":"2025-09-02 23:38:04"}
+{"level":"error","message":"Error adding reaction: invalid input syntax for type uuid: \"bcpfub1b1ku\"","timestamp":"2025-09-02 23:38:04"}
+{"level":"error","message":"Error getting reactions: invalid input syntax for type uuid: \"d1vvmo6la6s\"","timestamp":"2025-09-02 23:38:05"}
+{"level":"error","message":"Error adding reaction: invalid input syntax for type uuid: \"d1vvmo6la6s\"","timestamp":"2025-09-02 23:38:05"}
+{"level":"error","message":"Error getting reactions: invalid input syntax for type uuid: \"bcpfub1b1ku\"","timestamp":"2025-09-02 23:38:09"}
+{"level":"error","message":"Error getting reactions: invalid input syntax for type uuid: \"d1vvmo6la6s\"","timestamp":"2025-09-02 23:38:09"}
+{"level":"error","message":"Error getting reactions: invalid input syntax for type uuid: \"igukzsyxj4e\"","timestamp":"2025-09-02 23:38:27"}
+{"level":"error","message":"Error getting reactions: invalid input syntax for type uuid: \"h0mzd6prkn\"","timestamp":"2025-09-02 23:41:27"}
+{"level":"error","message":"Error adding reaction: Error in notifications.create: new row for relation \"notifications\" violates check constraint \"chk_notifications_type\"","timestamp":"2026-02-08 18:53:18"}
+{"level":"error","message":"Error adding reaction: Error in notifications.create: new row for relation \"notifications\" violates check constraint \"chk_notifications_type\"","timestamp":"2026-02-08 18:53:20"}
+{"level":"error","message":"Error adding reaction: Error in notifications.create: new row for relation \"notifications\" violates check constraint \"chk_notifications_type\"","timestamp":"2026-02-08 18:56:28"}
+{"level":"error","message":"Error adding reaction: Error in notifications.create: new row for relation \"notifications\" violates check constraint \"chk_notifications_type\"","timestamp":"2026-02-08 19:01:25"}
+{"level":"error","message":"Error adding reaction: Error in notifications.create: new row for relation \"notifications\" violates check constraint \"chk_notifications_type\"","timestamp":"2026-02-08 19:01:29"}
+{"level":"error","message":"Error adding reaction: Error in notifications.create: new row for relation \"notifications\" violates check constraint \"chk_notifications_type\"","timestamp":"2026-02-08 19:01:31"}
+{"level":"error","message":"Error adding reaction: Error in notifications.create: new row for relation \"notifications\" violates check constraint \"chk_notifications_type\"","timestamp":"2026-02-08 19:01:44"}
+{"level":"error","message":"Error adding reaction: Error in notifications.create: new row for relation \"notifications\" violates check constraint \"chk_notifications_type\"","timestamp":"2026-02-08 19:03:02"}
+{"level":"error","message":"Error adding reaction: Error in notifications.create: new row for relation \"notifications\" violates check constraint \"chk_notifications_type\"","timestamp":"2026-02-08 19:03:04"}
+{"level":"error","message":"Error adding reaction: Error in notifications.create: new row for relation \"notifications\" violates check constraint \"chk_notifications_type\"","timestamp":"2026-02-08 19:03:11"}
+{"level":"error","message":"Error adding reaction: Error in notifications.create: new row for relation \"notifications\" violates check constraint \"chk_notifications_type\"","timestamp":"2026-02-08 19:03:16"}
+{"level":"error","message":"Error getting reactions: Connection terminated due to connection timeout","timestamp":"2026-02-17 14:26:13"}
+{"level":"error","message":"Error getting reactions: Connection terminated due to connection timeout","timestamp":"2026-02-17 14:27:27"}
+{"level":"error","message":"Error getting reactions: Connection terminated due to connection timeout","timestamp":"2026-02-17 14:28:19"}
+{"level":"error","message":"Error getting reactions: Connection terminated due to connection timeout","timestamp":"2026-02-17 14:29:27"}
+{"level":"error","message":"Error getting reactions: Connection terminated due to connection timeout","timestamp":"2026-02-17 14:31:19"}
+{"level":"error","message":"Error adding reaction: Connection terminated due to connection timeout","timestamp":"2026-02-17 14:38:29"}
+{"level":"error","message":"Error getting reactions: Connection terminated due to connection timeout","timestamp":"2026-02-17 14:41:53"}
+{"level":"error","message":"Error getting votes: Connection terminated due to connection timeout","timestamp":"2026-02-17 15:01:59"}
+{"level":"error","message":"Error adding vote: Cannot read properties of undefined (reading 'resolveContentOwner')","timestamp":"2026-02-18 11:14:31"}
+{"level":"error","message":"Error getting votes: invalid input syntax for type uuid: \"8w3rkv2omtd\"","timestamp":"2026-02-18 12:47:12"}
+{"level":"error","message":"Error getting votes: invalid input syntax for type uuid: \"8w3rkv2omtd\"","timestamp":"2026-02-18 12:47:13"}
+{"level":"error","message":"Error adding vote: invalid input syntax for type uuid: \"8w3rkv2omtd\"","timestamp":"2026-02-18 12:47:13"}
+{"level":"error","message":"Error getting votes: invalid input syntax for type uuid: \"8w3rkv2omtd\"","timestamp":"2026-02-18 12:47:15"}
+{"level":"error","message":"Error adding vote: invalid input syntax for type uuid: \"8w3rkv2omtd\"","timestamp":"2026-02-18 12:47:15"}
+{"level":"error","message":"Error getting votes: invalid input syntax for type uuid: \"8w3rkv2omtd\"","timestamp":"2026-02-18 12:47:20"}
+{"level":"error","message":"Error getting votes: Connection terminated due to connection timeout","timestamp":"2026-02-18 14:08:37"}

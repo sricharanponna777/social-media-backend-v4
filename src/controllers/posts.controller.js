@@ -63,7 +63,26 @@ class PostController {
             await client.connect();
             const cachedData = await client.get(cacheKey);
             if (cachedData) {
-                return res.json(JSON.parse(cachedData));
+                const posts = JSON.parse(cachedData);
+                try {
+                    const ids = Array.isArray(posts) ? posts.map(p => p.id).filter(Boolean) : [];
+                    if (ids.length) {
+                        // Build a parameterized IN clause for fresh counts
+                        const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+                        const fresh = await db.query(
+                            `SELECT id, comments_count FROM posts WHERE id IN (${placeholders})`,
+                            ids
+                        );
+                        const countMap = new Map(fresh.rows.map(r => [r.id, r.comments_count]));
+                        for (const p of posts) {
+                            if (countMap.has(p.id)) p.comments_count = countMap.get(p.id);
+                        }
+                    }
+                } catch (e) {
+                    // If refreshing counts fails, fall back to cached values
+                    console.error('Failed to refresh comments_count for cached feed:', e);
+                }
+                return res.json(posts);
             }
 
             const result = await db.query(postQueries.GET_FEED_POSTS, [
@@ -118,6 +137,30 @@ class PostController {
             }
 
             res.status(204).send();
+        } catch (error) {
+            res.status(500).json({ error: 'Server error' });
+        }
+    }
+
+
+    async getPostComments(req, res) {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 50;
+        const offset = (page - 1) * limit;
+        try {
+            const result = await db.query(postQueries.GET_POST_COMMENTS, [req.params.id, limit, offset]);
+            res.json({ comments: result.rows, page, limit });
+        } catch (error) {
+            res.status(500).json({ error: 'Server error' });
+        }
+    }
+
+    async addPostComment(req, res) {
+        const { content, parent_id = null } = req.body;
+        if (!content || !content.trim()) return res.status(400).json({ error: 'Content required' });
+        try {
+            const result = await db.query(postQueries.CREATE_POST_COMMENT, [req.params.id, req.user.id, parent_id, content.trim()]);
+            res.status(201).json(result.rows[0]);
         } catch (error) {
             res.status(500).json({ error: 'Server error' });
         }

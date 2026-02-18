@@ -5,6 +5,20 @@ module.exports = {
     ORDER BY created_at DESC
     LIMIT $2 OFFSET $3
   `,
+  GET_NOTIFICATIONS_WITH_UNREAD: `
+    SELECT n.*, stats.unread_count
+    FROM (
+      SELECT * FROM notifications
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+      LIMIT $2 OFFSET $3
+    ) n
+    CROSS JOIN (
+      SELECT COUNT(*)::int AS unread_count
+      FROM notifications
+      WHERE user_id = $1 AND is_read = false
+    ) stats
+  `,
   GET_UNREAD_COUNT: `
     SELECT COUNT(*) FROM notifications
     WHERE user_id = $1 AND is_read = false

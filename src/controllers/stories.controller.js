@@ -3,18 +3,32 @@ const storyQueries = require('../queries/stories.queries');
 const fileService = require('../services/file.service');
 const notificationService = require('../services/notification.service');
 
+const mimeToExtension = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+};
 class StoryController {
     async createStory(req, res) {
         try {
+            const { mediaBase64, mediaType, mimeType, caption } = req.body;
             let mediaUrl;
-            if (req.files && req.files.length > 0) {
-                const uploadResult = await fileService.uploadFile(req.files[0]);
-                mediaUrl = uploadResult.url;
-            } else if (req.body.mediaBase64) {
+            if (mediaBase64 && mimeType) {
+                const extension = mimeToExtension[mimeType] || 'jpg';
+                const originalFileName = `story.${extension}`;
+                
+                // Pass the mimeType to the service
                 const uploadResult = await fileService.uploadBase64File(
-                    req.body.mediaBase64,
-                    'story.' + (req.body.mediaType === 'video' ? 'mp4' : 'jpg')
+                    mediaBase64,
+                    mimeType,
+                    originalFileName
                 );
+                mediaUrl = uploadResult.url;
+            } else if (req.files && req.files.length > 0) {
+                const uploadResult = await fileService.uploadFile(req.files[0]);
                 mediaUrl = uploadResult.url;
             } else {
                 return res.status(400).json({ error: 'Media content is required' });
@@ -23,22 +37,28 @@ class StoryController {
             const result = await db.query(storyQueries.CREATE_STORY, [
                 req.user.id,
                 mediaUrl,
-                req.body.mediaType,
-                req.body.caption,
-                req.body.duration || 5,
+                mediaType,
+                caption,
+                5,
+                new Date(Math.floor(Date.now() + 24 * 60 * 60 * 1000)),
             ]);
 
-            // Get user's followers to notify them
+            // Get accepted friends to notify them
             const followersResult = await db.query(`
-                SELECT follower_id
-                FROM follows
-                WHERE following_id = $1 AND status = 'accepted'
+                SELECT
+                    CASE
+                        WHEN f.user_id = $1 THEN f.friend_id
+                        ELSE f.user_id
+                    END AS friend_id
+                FROM friends f
+                WHERE (f.user_id = $1 OR f.friend_id = $1)
+                  AND f.status = 'accepted'
             `, [req.user.id]);
 
-            // Create notifications for followers
-            await Promise.all(followersResult.rows.map(follower =>
+            // Create notifications for accepted friends
+            await Promise.all(followersResult.rows.map(friend =>
                 notificationService.createNotification({
-                    user_id: follower.follower_id,
+                    user_id: friend.friend_id,
                     actor_id: req.user.id,
                     type: 'new_story',
                     target_type: 'story',
@@ -105,6 +125,10 @@ class StoryController {
                 deviceInfo,
                 locationData
             ]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ error: 'Story not found or not accessible' });
+            }
 
             res.json(result.rows[0]);
         } catch (error) {

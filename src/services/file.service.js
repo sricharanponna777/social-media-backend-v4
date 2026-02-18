@@ -37,7 +37,7 @@ class FileService {
     }
 
     _fileFilter(req, file, cb) {
-        const allowedTypes = (process.env.ALLOWED_FILE_TYPES || 'image/jpeg,image/png,image/gif')
+        const allowedTypes = (process.env.ALLOWED_FILE_TYPES || 'image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime')
             .split(',');
 
         if (allowedTypes.includes(file.mimetype)) {
@@ -47,14 +47,20 @@ class FileService {
         }
     }
 
+    // This method is now a general-purpose upload function
     async uploadFile(file) {
         try {
             if (!file) throw new Error('No file provided');
 
-            // File is already saved by multer, just return the URL
+            // If the file has a buffer, write it to disk first
+            if (file.buffer) {
+                const filePath = path.join(this.uploadDir, file.filename);
+                await fs.writeFile(filePath, file.buffer);
+            }
+
             return {
                 url: `/uploads/${file.filename}`,
-                path: file.path
+                path: file.path || path.join(this.uploadDir, file.filename)
             };
         } catch (error) {
             console.error('File upload error:', error);
@@ -77,30 +83,26 @@ class FileService {
         return this.upload.array(fieldName, maxCount);
     }
 
-    // Utility method to get file type from base64
-    getFileTypeFromBase64(base64String) {
-        const match = base64String.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,/);
-        return match ? match[1] : null;
-    }
-
-    // Convert base64 to buffer
-    base64ToBuffer(base64String) {
+    /**
+     * Uploads a file from a Base64 string.
+     * @param {string} base64String The Base64 string, with or without a Data URI prefix.
+     * @param {string} mimeType The MIME type of the file (e.g., 'image/webp').
+     * @param {string} originalFileName The desired filename (e.g., 'story.webp').
+     * @returns {Promise<{url: string, path: string}>}
+     */
+    async uploadBase64File(base64String, mimeType, originalFileName) {
+        // Strip the Data URI prefix if it exists, and get the actual Base64 data
         const base64Data = base64String.replace(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,/, '');
-        return Buffer.from(base64Data, 'base64');
-    }
 
-    // Upload base64 file
-    async uploadBase64File(base64String, fileName) {
-        const fileType = this.getFileTypeFromBase64(base64String);
-        if (!fileType) {
-            throw new Error('Invalid base64 string');
-        }
+        // Convert the clean Base64 data to a buffer
+        const buffer = Buffer.from(base64Data, 'base64');
 
-        const buffer = this.base64ToBuffer(base64String);
+        // Create a 'mock' file object that can be passed to the general uploadFile method
         const file = {
-            buffer,
-            mimetype: fileType,
-            originalname: fileName
+            buffer: buffer,
+            mimetype: mimeType,
+            // Generate a unique filename with the correct extension
+            filename: `${crypto.randomBytes(16).toString('hex')}${path.extname(originalFileName)}`
         };
 
         return this.uploadFile(file);

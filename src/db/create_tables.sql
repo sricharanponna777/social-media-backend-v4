@@ -34,6 +34,45 @@ COMMENT ON SCHEMA public IS 'standard public schema';
 
 
 --
+-- Name: apply_content_vote_counter(character varying, uuid, character varying, integer); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.apply_content_vote_counter(p_content_type character varying, p_content_id uuid, p_vote_type character varying, p_delta integer) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF p_content_type = 'post' THEN
+        IF p_vote_type = 'upvote' THEN
+            PERFORM update_counter('posts', 'id', p_content_id, 'upvotes_count', p_delta);
+        ELSE
+            PERFORM update_counter('posts', 'id', p_content_id, 'downvotes_count', p_delta);
+        END IF;
+    ELSIF p_content_type = 'comment' THEN
+        IF p_vote_type = 'upvote' THEN
+            PERFORM update_counter('post_comments', 'id', p_content_id, 'upvotes_count', p_delta);
+        ELSE
+            PERFORM update_counter('post_comments', 'id', p_content_id, 'downvotes_count', p_delta);
+        END IF;
+    ELSIF p_content_type = 'story' THEN
+        IF p_vote_type = 'upvote' THEN
+            PERFORM update_counter('stories', 'id', p_content_id, 'upvotes_count', p_delta);
+        ELSE
+            PERFORM update_counter('stories', 'id', p_content_id, 'downvotes_count', p_delta);
+        END IF;
+    ELSIF p_content_type = 'reel' THEN
+        IF p_vote_type = 'upvote' THEN
+            PERFORM update_counter('reels', 'id', p_content_id, 'upvotes_count', p_delta);
+        ELSE
+            PERFORM update_counter('reels', 'id', p_content_id, 'downvotes_count', p_delta);
+        END IF;
+    END IF;
+END;
+$$;
+
+
+ALTER FUNCTION public.apply_content_vote_counter(p_content_type character varying, p_content_id uuid, p_vote_type character varying, p_delta integer) OWNER TO postgres;
+
+--
 -- Name: can_view_content(uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -42,7 +81,7 @@ CREATE FUNCTION public.can_view_content(viewer_id uuid, content_owner_id uuid, c
     AS $$
 DECLARE
     is_following boolean;
-    is_close_friend boolean;
+    is_friend boolean;
 BEGIN
     -- Public content is always visible
     IF content_visibility = 'public' THEN
@@ -54,12 +93,11 @@ BEGIN
         RETURN true;
     END IF;
 
-    -- Check if user is following
+    -- Check if user is following (no status field, just check if a row exists)
     SELECT EXISTS(
         SELECT 1 FROM follows 
         WHERE follower_id = viewer_id 
-        AND following_id = content_owner_id 
-        AND status = 'accepted'
+        AND following_id = content_owner_id
     ) INTO is_following;
 
     -- For followers-only content
@@ -68,14 +106,14 @@ BEGIN
     END IF;
 
     -- For close friends content
-    IF content_visibility = 'close_friends' THEN
+    IF content_visibility = 'friends' THEN
         SELECT EXISTS(
-            SELECT 1 FROM close_friends 
+            SELECT 1 FROM friends 
             WHERE user_id = content_owner_id 
             AND friend_id = viewer_id
-            AND status = 'accepted' -- FIX: Ensure the friendship is accepted
-        ) INTO is_close_friend;
-        RETURN is_close_friend;
+            AND status = 'accepted' -- Ensure the friendship is accepted
+        ) INTO is_friend;
+        RETURN is_friend;
     END IF;
 
     RETURN false;
@@ -124,15 +162,28 @@ CREATE FUNCTION public.posts_search_vector_update() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    NEW.search_vector := 
+    NEW.search_vector :=
         setweight(to_tsvector('english', COALESCE(NEW.content, '')), 'A') ||
         setweight(to_tsvector('english', COALESCE(NEW.location, '')), 'B') ||
-        setweight(to_tsvector('english', COALESCE(
-            (SELECT string_agg(u.username || ' ' || COALESCE(u.full_name, ''), ' ')
-             FROM unnest(regexp_matches(NEW.content, '@(\w+)', 'g')) AS m(username)
-             JOIN users u ON u.username = m.username),
-            ''
-        )), 'C');
+        setweight(
+            to_tsvector(
+                'english',
+                COALESCE(
+                    (
+                        SELECT string_agg(
+                            u.username || ' ' || COALESCE(u.full_name, ''), ' '
+                        )
+                        FROM (
+                            SELECT m[1] AS username
+                            FROM regexp_matches(NEW.content, '@(\w+)', 'g') AS m
+                        ) AS mentions
+                        JOIN users u ON u.username = mentions.username
+                    ),
+                    ''
+                )
+            ),
+            'C'
+        );
     RETURN NEW;
 END;
 $$;
@@ -209,6 +260,35 @@ $$;
 
 
 ALTER FUNCTION public.update_comment_replies_count() OWNER TO postgres;
+
+--
+-- Name: update_content_votes_count(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.update_content_votes_count() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        PERFORM apply_content_vote_counter(NEW.content_type, NEW.content_id, NEW.vote_type, 1);
+    ELSIF TG_OP = 'DELETE' THEN
+        PERFORM apply_content_vote_counter(OLD.content_type, OLD.content_id, OLD.vote_type, -1);
+    ELSIF TG_OP = 'UPDATE' THEN
+        IF OLD.content_type = NEW.content_type
+           AND OLD.content_id = NEW.content_id
+           AND OLD.vote_type = NEW.vote_type THEN
+            RETURN NULL;
+        END IF;
+
+        PERFORM apply_content_vote_counter(OLD.content_type, OLD.content_id, OLD.vote_type, -1);
+        PERFORM apply_content_vote_counter(NEW.content_type, NEW.content_id, NEW.vote_type, 1);
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+
+ALTER FUNCTION public.update_content_votes_count() OWNER TO postgres;
 
 --
 -- Name: update_counter(text, text, uuid, text, integer); Type: FUNCTION; Schema: public; Owner: postgres
@@ -433,51 +513,29 @@ COMMENT ON TABLE public.affiliate_purchases IS 'Affiliate purchase tracking and 
 
 
 --
--- Name: close_friends; Type: TABLE; Schema: public; Owner: postgres
+-- Name: content_votes; Type: TABLE; Schema: public; Owner: postgres
 --
 
-CREATE TABLE public.close_friends (
+CREATE TABLE public.content_votes (
     id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
     user_id uuid NOT NULL,
-    friend_id uuid NOT NULL,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
-    CONSTRAINT chk_close_friends_self CHECK ((user_id <> friend_id)),
-    CONSTRAINT close_friends_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'accepted'::character varying, 'rejected'::character varying, 'blocked'::character varying])::text[])))
-);
-
-
-ALTER TABLE public.close_friends OWNER TO postgres;
-
---
--- Name: TABLE close_friends; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON TABLE public.close_friends IS 'Close friends list for private stories';
-
-
---
--- Name: content_reactions; Type: TABLE; Schema: public; Owner: postgres
---
-
-CREATE TABLE public.content_reactions (
-    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
-    user_id uuid NOT NULL,
-    reaction_id uuid NOT NULL,
+    vote_type character varying(20) NOT NULL,
     content_type character varying(20) NOT NULL,
     content_id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT chk_content_reactions_type CHECK (((content_type)::text = ANY ((ARRAY['post'::character varying, 'comment'::character varying, 'story'::character varying, 'reel'::character varying])::text[])))
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT chk_content_votes_type CHECK (((content_type)::text = ANY ((ARRAY['post'::character varying, 'comment'::character varying, 'story'::character varying, 'reel'::character varying])::text[]))),
+    CONSTRAINT chk_content_votes_vote_type CHECK (((vote_type)::text = ANY ((ARRAY['upvote'::character varying, 'downvote'::character varying])::text[])))
 );
 
 
-ALTER TABLE public.content_reactions OWNER TO postgres;
+ALTER TABLE public.content_votes OWNER TO postgres;
 
 --
--- Name: TABLE content_reactions; Type: COMMENT; Schema: public; Owner: postgres
+-- Name: TABLE content_votes; Type: COMMENT; Schema: public; Owner: postgres
 --
 
-COMMENT ON TABLE public.content_reactions IS 'All content reactions in one table';
+COMMENT ON TABLE public.content_votes IS 'All content votes (upvotes/downvotes) in one table';
 
 
 --
@@ -540,10 +598,8 @@ CREATE TABLE public.follows (
     id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
     follower_id uuid NOT NULL,
     following_id uuid NOT NULL,
-    status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT chk_follows_self CHECK ((follower_id <> following_id)),
-    CONSTRAINT chk_follows_status CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'accepted'::character varying, 'rejected'::character varying])::text[])))
+    CONSTRAINT chk_follows_self CHECK ((follower_id <> following_id))
 );
 
 
@@ -554,6 +610,30 @@ ALTER TABLE public.follows OWNER TO postgres;
 --
 
 COMMENT ON TABLE public.follows IS 'User follow relationships';
+
+
+--
+-- Name: friends; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.friends (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    user_id uuid NOT NULL,
+    friend_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
+    CONSTRAINT chk_friends_self CHECK ((user_id <> friend_id)),
+    CONSTRAINT friends_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'accepted'::character varying, 'rejected'::character varying, 'blocked'::character varying])::text[])))
+);
+
+
+ALTER TABLE public.friends OWNER TO postgres;
+
+--
+-- Name: TABLE friends; Type: COMMENT; Schema: public; Owner: postgres
+--
+
+COMMENT ON TABLE public.friends IS 'Close friends list for private stories';
 
 
 --
@@ -663,7 +743,7 @@ CREATE TABLE public.notifications (
     is_read boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     read_at timestamp with time zone,
-    CONSTRAINT chk_notifications_type CHECK (((type)::text = ANY ((ARRAY['follow_request'::character varying, 'follow_accept'::character varying, 'post_like'::character varying, 'post_comment'::character varying, 'comment_like'::character varying, 'comment_reply'::character varying, 'message'::character varying, 'mention'::character varying, 'story_view'::character varying, 'story_reaction'::character varying])::text[])))
+    CONSTRAINT chk_notifications_type CHECK (((type)::text = ANY ((ARRAY['friend_request'::character varying, 'friend_request_accepted'::character varying, 'friend_request_rejected'::character varying, 'friend_removed'::character varying, 'friend_blocked'::character varying, 'post_like'::character varying, 'post_comment'::character varying, 'comment_like'::character varying, 'comment_reply'::character varying, 'message'::character varying, 'mention'::character varying, 'story_view'::character varying, 'story_reaction'::character varying])::text[])))
 );
 
 
@@ -713,6 +793,8 @@ CREATE TABLE public.post_comments (
     is_edited boolean DEFAULT false NOT NULL,
     is_pinned boolean DEFAULT false NOT NULL,
     replies_count integer DEFAULT 0 NOT NULL,
+    upvotes_count integer DEFAULT 0 NOT NULL,
+    downvotes_count integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     deleted_at timestamp with time zone,
@@ -744,12 +826,14 @@ CREATE TABLE public.posts (
     is_pinned boolean DEFAULT false NOT NULL,
     is_archived boolean DEFAULT false NOT NULL,
     comments_count integer DEFAULT 0 NOT NULL,
+    upvotes_count integer DEFAULT 0 NOT NULL,
+    downvotes_count integer DEFAULT 0 NOT NULL,
     shares_count integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     deleted_at timestamp with time zone,
     search_vector tsvector,
-    CONSTRAINT chk_posts_visibility CHECK (((visibility)::text = ANY ((ARRAY['public'::character varying, 'private'::character varying, 'followers'::character varying, 'close_friends'::character varying])::text[])))
+    CONSTRAINT chk_posts_visibility CHECK (((visibility)::text = ANY ((ARRAY['public'::character varying, 'private'::character varying, 'followers'::character varying, 'friends'::character varying])::text[])))
 );
 
 
@@ -763,28 +847,6 @@ COMMENT ON TABLE public.posts IS 'User posts and media content';
 
 
 --
--- Name: reactions; Type: TABLE; Schema: public; Owner: postgres
---
-
-CREATE TABLE public.reactions (
-    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
-    name character varying(50) NOT NULL,
-    icon_url text,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    CONSTRAINT chk_reactions_name CHECK (((name)::text = ANY ((ARRAY['like'::character varying, 'love'::character varying, 'haha'::character varying, 'wow'::character varying, 'sad'::character varying, 'angry'::character varying])::text[])))
-);
-
-
-ALTER TABLE public.reactions OWNER TO postgres;
-
---
--- Name: TABLE reactions; Type: COMMENT; Schema: public; Owner: postgres
---
-
-COMMENT ON TABLE public.reactions IS 'Available reaction types';
-
-
---
 -- Name: reel_comments; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -792,6 +854,7 @@ CREATE TABLE public.reel_comments (
     id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
     reel_id uuid NOT NULL,
     user_id uuid NOT NULL,
+    parent_id uuid,
     content text NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
@@ -846,6 +909,8 @@ CREATE TABLE public.reels (
     music_artist_name character varying(255),
     views_count integer DEFAULT 0 NOT NULL,
     comments_count integer DEFAULT 0 NOT NULL,
+    upvotes_count integer DEFAULT 0 NOT NULL,
+    downvotes_count integer DEFAULT 0 NOT NULL,
     shares_count integer DEFAULT 0 NOT NULL,
     is_original boolean DEFAULT true NOT NULL,
     original_reel_id uuid,
@@ -909,6 +974,8 @@ CREATE TABLE public.stories (
     is_highlighted boolean DEFAULT false NOT NULL,
     poll_type character varying(20),
     views_count integer DEFAULT 0 NOT NULL,
+    upvotes_count integer DEFAULT 0 NOT NULL,
+    downvotes_count integer DEFAULT 0 NOT NULL,
     expires_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     deleted_at timestamp with time zone,
@@ -1147,35 +1214,19 @@ ALTER TABLE ONLY public.affiliate_purchases
 
 
 --
--- Name: close_friends close_friends_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: content_votes content_votes_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
-ALTER TABLE ONLY public.close_friends
-    ADD CONSTRAINT close_friends_pkey PRIMARY KEY (id);
-
-
---
--- Name: close_friends close_friends_user_id_friend_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.close_friends
-    ADD CONSTRAINT close_friends_user_id_friend_id_key UNIQUE (user_id, friend_id);
+ALTER TABLE ONLY public.content_votes
+    ADD CONSTRAINT content_votes_pkey PRIMARY KEY (id);
 
 
 --
--- Name: content_reactions content_reactions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: content_votes content_votes_user_id_content_type_content_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
-ALTER TABLE ONLY public.content_reactions
-    ADD CONSTRAINT content_reactions_pkey PRIMARY KEY (id);
-
-
---
--- Name: content_reactions content_reactions_user_id_content_type_content_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.content_reactions
-    ADD CONSTRAINT content_reactions_user_id_content_type_content_id_key UNIQUE (user_id, content_type, content_id);
+ALTER TABLE ONLY public.content_votes
+    ADD CONSTRAINT content_votes_user_id_content_type_content_id_key UNIQUE (user_id, content_type, content_id);
 
 
 --
@@ -1216,6 +1267,22 @@ ALTER TABLE ONLY public.follows
 
 ALTER TABLE ONLY public.follows
     ADD CONSTRAINT follows_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: friends friends_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.friends
+    ADD CONSTRAINT friends_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: friends friends_user_id_friend_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.friends
+    ADD CONSTRAINT friends_user_id_friend_id_key UNIQUE (user_id, friend_id);
 
 
 --
@@ -1280,22 +1347,6 @@ ALTER TABLE ONLY public.post_comments
 
 ALTER TABLE ONLY public.posts
     ADD CONSTRAINT posts_pkey PRIMARY KEY (id);
-
-
---
--- Name: reactions reactions_name_key; Type: CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.reactions
-    ADD CONSTRAINT reactions_name_key UNIQUE (name);
-
-
---
--- Name: reactions reactions_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.reactions
-    ADD CONSTRAINT reactions_pkey PRIMARY KEY (id);
 
 
 --
@@ -1499,45 +1550,24 @@ CREATE INDEX idx_affiliate_purchases_status ON public.affiliate_purchases USING 
 
 
 --
--- Name: idx_close_friends_friend_id; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_content_votes_content; Type: INDEX; Schema: public; Owner: postgres
 --
 
-CREATE INDEX idx_close_friends_friend_id ON public.close_friends USING btree (friend_id);
-
-
---
--- Name: idx_close_friends_user_id; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX idx_close_friends_user_id ON public.close_friends USING btree (user_id);
+CREATE INDEX idx_content_votes_content ON public.content_votes USING btree (content_type, content_id, vote_type);
 
 
 --
--- Name: idx_close_friends_user_status; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_content_votes_user_content; Type: INDEX; Schema: public; Owner: postgres
 --
 
-CREATE INDEX idx_close_friends_user_status ON public.close_friends USING btree (user_id, status);
-
-
---
--- Name: idx_content_reactions_content; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX idx_content_reactions_content ON public.content_reactions USING btree (content_type, content_id);
+CREATE INDEX idx_content_votes_user_content ON public.content_votes USING btree (user_id, content_type, content_id);
 
 
 --
--- Name: idx_content_reactions_user_content; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_content_votes_user_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
-CREATE INDEX idx_content_reactions_user_content ON public.content_reactions USING btree (user_id, content_type, content_id);
-
-
---
--- Name: idx_content_reactions_user_id; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX idx_content_reactions_user_id ON public.content_reactions USING btree (user_id);
+CREATE INDEX idx_content_votes_user_id ON public.content_votes USING btree (user_id);
 
 
 --
@@ -1576,13 +1606,6 @@ CREATE INDEX idx_follows_follower_id ON public.follows USING btree (follower_id)
 
 
 --
--- Name: idx_follows_follower_status; Type: INDEX; Schema: public; Owner: postgres
---
-
-CREATE INDEX idx_follows_follower_status ON public.follows USING btree (follower_id, status);
-
-
---
 -- Name: idx_follows_following_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -1590,17 +1613,24 @@ CREATE INDEX idx_follows_following_id ON public.follows USING btree (following_i
 
 
 --
--- Name: idx_follows_following_status; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_friends_friend_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
-CREATE INDEX idx_follows_following_status ON public.follows USING btree (following_id, status);
+CREATE INDEX idx_friends_friend_id ON public.friends USING btree (friend_id);
 
 
 --
--- Name: idx_follows_status; Type: INDEX; Schema: public; Owner: postgres
+-- Name: idx_friends_user_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
-CREATE INDEX idx_follows_status ON public.follows USING btree (status);
+CREATE INDEX idx_friends_user_id ON public.friends USING btree (user_id);
+
+
+--
+-- Name: idx_friends_user_status; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_friends_user_status ON public.friends USING btree (user_id, status);
 
 
 --
@@ -2150,6 +2180,20 @@ CREATE TRIGGER update_comment_replies_count_trigger AFTER INSERT OR DELETE ON pu
 
 
 --
+-- Name: content_votes update_content_votes_count_trigger; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER update_content_votes_count_trigger AFTER INSERT OR DELETE OR UPDATE ON public.content_votes FOR EACH ROW EXECUTE FUNCTION public.update_content_votes_count();
+
+
+--
+-- Name: content_votes update_content_votes_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
+--
+
+CREATE TRIGGER update_content_votes_updated_at BEFORE UPDATE ON public.content_votes FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
 -- Name: conversations update_conversations_updated_at; Type: TRIGGER; Schema: public; Owner: postgres
 --
 
@@ -2288,35 +2332,11 @@ ALTER TABLE ONLY public.affiliate_purchases
 
 
 --
--- Name: close_friends close_friends_friend_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+-- Name: content_votes content_votes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
-ALTER TABLE ONLY public.close_friends
-    ADD CONSTRAINT close_friends_friend_id_fkey FOREIGN KEY (friend_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-
---
--- Name: close_friends close_friends_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.close_friends
-    ADD CONSTRAINT close_friends_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-
---
--- Name: content_reactions content_reactions_reaction_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.content_reactions
-    ADD CONSTRAINT content_reactions_reaction_id_fkey FOREIGN KEY (reaction_id) REFERENCES public.reactions(id) ON DELETE CASCADE;
-
-
---
--- Name: content_reactions content_reactions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.content_reactions
-    ADD CONSTRAINT content_reactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.content_votes
+    ADD CONSTRAINT content_votes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
@@ -2357,6 +2377,22 @@ ALTER TABLE ONLY public.follows
 
 ALTER TABLE ONLY public.follows
     ADD CONSTRAINT follows_following_id_fkey FOREIGN KEY (following_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: friends friends_friend_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.friends
+    ADD CONSTRAINT friends_friend_id_fkey FOREIGN KEY (friend_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: friends friends_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.friends
+    ADD CONSTRAINT friends_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --
@@ -2461,6 +2497,14 @@ ALTER TABLE ONLY public.post_comments
 
 ALTER TABLE ONLY public.posts
     ADD CONSTRAINT posts_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: reel_comments reel_comments_parent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.reel_comments
+    ADD CONSTRAINT reel_comments_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES public.reel_comments(id) ON DELETE CASCADE;
 
 
 --
@@ -2620,17 +2664,10 @@ GRANT ALL ON TABLE public.affiliate_purchases TO PUBLIC;
 
 
 --
--- Name: TABLE close_friends; Type: ACL; Schema: public; Owner: postgres
+-- Name: TABLE content_votes; Type: ACL; Schema: public; Owner: postgres
 --
 
-GRANT ALL ON TABLE public.close_friends TO PUBLIC;
-
-
---
--- Name: TABLE content_reactions; Type: ACL; Schema: public; Owner: postgres
---
-
-GRANT ALL ON TABLE public.content_reactions TO PUBLIC;
+GRANT ALL ON TABLE public.content_votes TO PUBLIC;
 
 
 --
@@ -2652,6 +2689,13 @@ GRANT ALL ON TABLE public.conversations TO PUBLIC;
 --
 
 GRANT ALL ON TABLE public.follows TO PUBLIC;
+
+
+--
+-- Name: TABLE friends; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.friends TO PUBLIC;
 
 
 --
@@ -2708,13 +2752,6 @@ GRANT ALL ON TABLE public.post_comments TO PUBLIC;
 --
 
 GRANT ALL ON TABLE public.posts TO PUBLIC;
-
-
---
--- Name: TABLE reactions; Type: ACL; Schema: public; Owner: postgres
---
-
-GRANT ALL ON TABLE public.reactions TO PUBLIC;
 
 
 --

@@ -1,6 +1,5 @@
 const BaseService = require('./base.service');
 const db = require('../db/database');
-const socketService = global.socketService;
 
 class NotificationService extends BaseService {
     constructor() {
@@ -13,7 +12,7 @@ class NotificationService extends BaseService {
         const query = `
             SELECT n.*, 
                    a.username as actor_username, 
-                   a.avatar_url as actor_avatar_url
+                   a.avatar_url as actor_avatar_url,
                    a.cover_photo_url as actor_cover_photo_url
             FROM notifications n
             LEFT JOIN users a ON a.id = n.actor_id
@@ -52,6 +51,7 @@ class NotificationService extends BaseService {
 
     async createNotification(data) {
         const notification = await this.create(data);
+        const socketService = global.socketService;
 
         // Send real-time notification if user is online
         if (socketService) {

@@ -13,21 +13,24 @@ class PostService extends BaseService {
             WITH following_users AS (
                 SELECT following_id
                 FROM follows
-                WHERE follower_id = $1 AND status = 'accepted'
+                WHERE follower_id = $1
             )
             SELECT p.*, 
                    u.username, u.full_name, u.avatar_url, u.cover_photo_url, u.is_verified,
                    (
-                       SELECT COUNT(*) FROM content_reactions cr
-                       WHERE cr.content_type = 'post' AND cr.content_id = p.id
-                   ) as total_reactions,
+                       SELECT COUNT(*) FROM content_votes cv
+                       WHERE cv.content_type = 'post' AND cv.content_id = p.id AND cv.vote_type = 'upvote'
+                   ) as total_upvotes,
                    (
-                       SELECT r.name
-                       FROM content_reactions cr
-                       JOIN reactions r ON cr.reaction_id = r.id
-                       WHERE cr.content_type = 'post' AND cr.content_id = p.id AND cr.user_id = $1
+                       SELECT COUNT(*) FROM content_votes cv
+                       WHERE cv.content_type = 'post' AND cv.content_id = p.id AND cv.vote_type = 'downvote'
+                   ) as total_downvotes,
+                   (
+                       SELECT cv.vote_type
+                       FROM content_votes cv
+                       WHERE cv.content_type = 'post' AND cv.content_id = p.id AND cv.user_id = $1
                        LIMIT 1
-                   ) as user_reaction
+                   ) as user_vote
             FROM posts p
             JOIN users u ON u.id = p.user_id
             WHERE (
@@ -51,16 +54,19 @@ class PostService extends BaseService {
             SELECT p.*, 
                    u.username, u.full_name, u.avatar_url, u.cover_photo_url, u.is_verified,
                    (
-                       SELECT COUNT(*) FROM content_reactions cr
-                       WHERE cr.content_type = 'post' AND cr.content_id = p.id
-                   ) as total_reactions,
+                       SELECT COUNT(*) FROM content_votes cv
+                       WHERE cv.content_type = 'post' AND cv.content_id = p.id AND cv.vote_type = 'upvote'
+                   ) as total_upvotes,
                    (
-                       SELECT r.name
-                       FROM content_reactions cr
-                       JOIN reactions r ON cr.reaction_id = r.id
-                       WHERE cr.content_type = 'post' AND cr.content_id = p.id AND cr.user_id = $2
+                       SELECT COUNT(*) FROM content_votes cv
+                       WHERE cv.content_type = 'post' AND cv.content_id = p.id AND cv.vote_type = 'downvote'
+                   ) as total_downvotes,
+                   (
+                       SELECT cv.vote_type
+                       FROM content_votes cv
+                       WHERE cv.content_type = 'post' AND cv.content_id = p.id AND cv.user_id = $2
                        LIMIT 1
-                   ) as user_reaction
+                   ) as user_vote
             FROM posts p
             JOIN users u ON u.id = p.user_id
             WHERE p.user_id = $1 
@@ -80,7 +86,7 @@ class PostService extends BaseService {
         return db.transaction(async (client) => {
             // Insert comment
             const insertQuery = `
-                INSERT INTO comments (post_id, user_id, parent_id, content)
+                INSERT INTO post_comments (post_id, user_id, parent_id, content)
                 VALUES ($1, $2, $3, $4)
                 RETURNING *
             `;
@@ -98,7 +104,7 @@ class PostService extends BaseService {
             } else {
                 // Update parent comment's replies count
                 await client.query(`
-                    UPDATE comments
+                    UPDATE post_comments
                     SET replies_count = replies_count + 1
                     WHERE id = $1
                 `, [parentId]);
@@ -113,7 +119,7 @@ class PostService extends BaseService {
             // Get comment info
             const commentQuery = `
                 SELECT post_id, parent_id
-                FROM comments
+                FROM post_comments
                 WHERE id = $1 AND user_id = $2
             `;
             
@@ -126,7 +132,7 @@ class PostService extends BaseService {
 
             // Delete comment
             await client.query(`
-                UPDATE comments
+                UPDATE post_comments
                 SET deleted_at = CURRENT_TIMESTAMP
                 WHERE id = $1
             `, [commentId]);
@@ -140,7 +146,7 @@ class PostService extends BaseService {
                 `, [post_id]);
             } else {
                 await client.query(`
-                    UPDATE comments
+                    UPDATE post_comments
                     SET replies_count = GREATEST(replies_count - 1, 0)
                     WHERE id = $1
                 `, [parent_id]);

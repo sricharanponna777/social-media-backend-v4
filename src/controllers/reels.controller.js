@@ -2,6 +2,11 @@ const pool = require('../db/database');
 const { AppError } = require('../utils/errors');
 const { logger } = require('../utils/logger');
 const QUERIES = require('../queries/reels.queries');
+const path = require('path');
+const fs = require('fs');
+const { exec } = require('child_process');
+const { promisify } = require('util');
+const execAsync = promisify(exec);
 
 class ReelsController {
     async createReel(req, res) {
@@ -15,12 +20,32 @@ class ReelsController {
             music_artist_name
         } = req.body;
 
+        let finalThumbnailUrl = thumbnail_url || null;
+        // Attempt server-side thumbnail generation if not provided and media_url is local
+        try {
+            if (!finalThumbnailUrl && media_url && media_url.startsWith('/uploads/')) {
+                const videoAbs = path.join(process.cwd(), media_url.replace(/^\//, ''));
+                const thumbDir = path.join(process.cwd(), 'uploads', 'thumbnails');
+                if (!fs.existsSync(thumbDir)) fs.mkdirSync(thumbDir, { recursive: true });
+                const baseName = path.parse(videoAbs).name + '-' + Date.now() + '.jpg';
+                const thumbAbs = path.join(thumbDir, baseName);
+
+                // Use ffmpeg to grab a frame at 1s
+                // Requires ffmpeg to be installed on the server
+                await execAsync(`ffmpeg -y -ss 00:00:01 -i "${videoAbs}" -frames:v 1 -q:v 2 "${thumbAbs}"`);
+                finalThumbnailUrl = `/uploads/thumbnails/${baseName}`;
+            }
+        } catch (e) {
+            // Non-fatal: proceed without thumbnail
+            logger.warn(`Thumbnail generation failed: ${e?.message || e}`);
+        }
+
         const result = await pool.query(
             QUERIES.CREATE_REEL,
             [
                 req.user.id,
                 media_url,
-                thumbnail_url,
+                finalThumbnailUrl,
                 duration,
                 caption,
                 music_track_url,
@@ -55,7 +80,7 @@ class ReelsController {
 
         const result = await pool.query(
             QUERIES.GET_USER_FEED,
-            [req.user.id, limit, offset]
+            [limit, offset]
         );
 
         res.json({
@@ -98,6 +123,21 @@ class ReelsController {
         logger.info(`Recorded view for reel ${id} by user ${req.user.id}`);
         res.status(200).json(result.rows[0]);
     }
-}
 
+
+    async getComments(req, res) {
+        const { id } = req.params;
+        const { page = 1, limit = 50 } = req.query;
+        const offset = (page - 1) * limit;
+        try {
+            const result = await pool.query(
+                `SELECT c.* FROM reel_comments c WHERE c.reel_id = $1 AND c.deleted_at IS NULL AND c.parent_id IS NULL ORDER BY c.created_at DESC LIMIT $2 OFFSET $3`,
+                [id, limit, offset]
+            );
+            res.json({ comments: result.rows, page: parseInt(page), limit: parseInt(limit) });
+        } catch (e) {
+            res.status(500).json({ error: 'Server error' });
+        }
+    }
+}
 module.exports = new ReelsController();

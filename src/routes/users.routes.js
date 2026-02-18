@@ -1,14 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const UserController = require('../controllers/users.controller');
-const { auth } = require('../middleware/auth');
+const { authenticate: auth } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validate');
 const { userValidation } = require('../validations/user.validation');
 
 // Public routes
 router.post('/register', validate(userValidation.register), UserController.register);
 router.post('/login', validate(userValidation.login), UserController.login);
-router.post('/verify-otp', UserController.verifyOtp);
+router.post('/verify-otp', validate(userValidation.verifyOtp), UserController.verifyOtp);
 
 
 // Protected routes

@@ -24,4 +24,4 @@ GRANT ALL ON TABLES TO public;
 COMMENT ON SCHEMA public IS 'standard public schema';
 
 -- Now run the schema.sql file to recreate all tables
-\i '/Volumes/Macintosh SSD/Code/webdev/social-media-backend-v4/src/db/schema.sql'
+\i '/Volumes/MyDevSSD/Code/webdev/social-media-backend-v4/src/db/schema.sql'

@@ -9,7 +9,7 @@ const fileService = require('../services/file.service');
 router.use(authenticate);
 
 // Create new conversation
-router.post('/conversations', validateMessage.conversation, MessageController.createConversation);
+router.post('/conversations', MessageController.createConversation);
 
 // Get user's conversations
 router.get('/conversations', MessageController.getConversations);

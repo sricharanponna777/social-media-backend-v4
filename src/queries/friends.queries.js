@@ -1,20 +1,23 @@
 module.exports = {
   getFriends: `
-    SELECT f.id,
+    SELECT f.id, u.username,
            CASE WHEN f.user_id = $1 THEN f.friend_id ELSE f.user_id END AS friend_id,
            f.status,
            f.created_at
     FROM friends f
+    JOIN users u ON CASE WHEN f.user_id = $1 THEN f.friend_id ELSE f.user_id END = u.id
     WHERE (f.user_id = $1 OR f.friend_id = $1) AND f.status = 'accepted'
   `,
   getIncomingRequests: `
-    SELECT f.*
+    SELECT f.*, u.username AS friend_username
     FROM friends f
+    JOIN users u ON f.user_id = u.id
     WHERE f.friend_id = $1 AND f.status = 'pending'
   `,
   getOutgoingRequests: `
-    SELECT f.*
+    SELECT f.*, u.username AS friend_username
     FROM friends f
+    JOIN users u ON f.friend_id = u.id
     WHERE f.user_id = $1 AND f.status = 'pending'
   `,
   getFriendshipStatus: `

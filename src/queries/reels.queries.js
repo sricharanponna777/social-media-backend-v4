@@ -5,21 +5,24 @@ module.exports = {
     RETURNING *
   `,
   GET_REEL_BY_ID: `
-    SELECT r.*
+    SELECT r.*, r.upvotes_count AS likes_count
     FROM reels r
     WHERE r.id = $1 AND r.deleted_at IS NULL
   `,
   GET_USER_FEED: `
-    SELECT r.*
+    SELECT r.*, r.upvotes_count AS likes_count, u.username, u.avatar_url, u.full_name
     FROM reels r
+    JOIN users u ON r.user_id = u.id
     WHERE r.deleted_at IS NULL
+    AND u.deleted_at IS NULL
     ORDER BY r.created_at DESC
-    LIMIT $2 OFFSET $3
+    LIMIT $1 OFFSET $2
   `,
   GET_TRENDING_REELS: `
-    SELECT * FROM reels
-    WHERE deleted_at IS NULL
-    ORDER BY views_count DESC
+    SELECT r.*, r.upvotes_count AS likes_count
+    FROM reels r
+    WHERE r.deleted_at IS NULL
+    ORDER BY r.views_count DESC
     LIMIT 20
   `,
   CREATE_REEL_COMMENT: `

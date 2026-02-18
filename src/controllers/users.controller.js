@@ -4,19 +4,35 @@ const db = require('../db/database');
 const userQueries = require('../queries/users.queries');
 const { hash, compare } = require('bcrypt');
 const { createToken, createOtp, extractTokenFromHeader, verifyToken } = require('../utils/auth.utils');
-const { AppError } = require('../utils/errors');
 const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 class UserController {
     async register(req, res) {
         const { email, mobileNumber, countryCode, username, password, firstName, lastName, ...profile } = req.body;
+        let transactionStarted = false;
         
         try {
-            db.query('BEGIN');
+            const fullMobileNumber = countryCode ? `+${countryCode} ${mobileNumber}` : mobileNumber;
+            const existingEmail = await db.query(userQueries.GET_USER_BY_EMAIL, [email]);
+            if (existingEmail.rows.length > 0) {
+                return res.status(409).json({ error: 'Email already registered', field: 'email' });
+            }
+
+            const existingUsername = await db.query(userQueries.GET_USER_BY_USERNAME, [username]);
+            if (existingUsername.rows.length > 0) {
+                return res.status(409).json({ error: 'Username already taken', field: 'username' });
+            }
+
+            const existingMobile = await db.query(userQueries.GET_USER_BY_MOBILE_NUMBER, [fullMobileNumber]);
+            if (existingMobile.rows.length > 0) {
+                return res.status(409).json({ error: 'Phone number already registered', field: 'mobileNumber' });
+            }
+
+            await db.query('BEGIN');
+            transactionStarted = true;
+
             // Hash password
             const passwordHash = await hash(password, 10);
-
-            const fullMobileNumber = countryCode ? `+${countryCode} ${mobileNumber}` : mobileNumber;
 
             // Create user
             const result = await db.query(userQueries.CREATE_USER, [email, fullMobileNumber, username, passwordHash, firstName, lastName, profile.avatarUrl || null, profile.coverPhotoUrl || null, profile.bio || null, profile.location || null, profile.website || null, profile.isPrivate || false]);
@@ -26,19 +42,29 @@ class UserController {
             // Create OTP
             const otp = await createOtp(user);
 
-            db.query('COMMIT');
+            await db.query('COMMIT');
+            transactionStarted = false;
 
             res.status(201).json({
                 user,
                 otp
             });
         } catch (error) {
-            db.query('ROLLBACK');
+            if (transactionStarted) {
+                try {
+                    await db.query('ROLLBACK');
+                } catch (rollbackError) {
+                    console.error('Register rollback error:', rollbackError);
+                }
+            }
             if (error.constraint === 'users_email_key') {
-                return res.status(409).json({ error: 'Email already registered' });
+                return res.status(409).json({ error: 'Email already registered', field: 'email' });
             }
             if (error.constraint === 'users_username_key') {
-                return res.status(409).json({ error: 'Username already taken' });
+                return res.status(409).json({ error: 'Username already taken', field: 'username' });
+            }
+            if (error.constraint === 'users_mobile_number_key') {
+                return res.status(409).json({ error: 'Phone number already registered', field: 'mobileNumber' });
             }
             console.log('Register error:', error);
             res.status(500).json({ error: 'Server error' });
@@ -52,25 +78,23 @@ class UserController {
             const result = await db.query(userQueries.GET_USER_BY_EMAIL, [email]);
             
             if (result.rows.length === 0) {
-                throw new AppError('Invalid credentials: Email not found', 401);
+                return res.status(401).json({ error: 'Email not found' });
             }
 
             const user = result.rows[0];
 
             // Check if user is banned
             if (user.is_banned) {
-                throw new AppError('Account has been banned', 403);
+                return res.status(403).json({ error: 'Account has been banned' });
             }
 
             const otpResult = (await db.query(userQueries.GET_OTP, [user.id]));
-            user.otp = otpResult.rows[0].otp;
-
-            console.log('user: ', JSON.stringify(user));
+            const currentOtp = otpResult.rows[0]?.otp;
 
             // Verify OTP
-            const isValid = await otp == user.otp;
+            const isValid = String(otp) === String(currentOtp);
             if (!isValid) {
-                throw new AppError('Invalid credentials: Incorrect OTP', 401);        
+                return res.status(401).json({ error: 'Incorrect OTP' });
             }
             
             // Update user
@@ -84,10 +108,8 @@ class UserController {
                 token
             });
         } catch (error) {
-            if (error instanceof AppError) {
-                throw error;
-            }
-            throw new AppError(`Server error: ${error.message}`, 500);
+            console.error('Verify OTP error:', error);
+            res.status(500).json({ error: 'Server error' });
         }
     }
 
@@ -163,20 +185,20 @@ class UserController {
             const result = await db.query(userQueries.GET_USER_BY_EMAIL, [email]);
             
             if (result.rows.length === 0) {
-                throw new AppError('Invalid credentials: Email not found', 401);
+                return res.status(401).json({ error: 'Email not found' });
             }
 
             const user = result.rows[0];
 
             // Check if user is banned
             if (user.is_banned) {
-                throw new AppError('Account has been banned', 403);
+                return res.status(403).json({ error: 'Account has been banned' });
             }
 
             // Verify password
             const isValid = await compare(password, user.password_hash);
             if (!isValid) {
-                throw new AppError('Invalid credentials: Incorrect password or email', 401);        
+                return res.status(401).json({ error: 'Incorrect password' });
             }
 
             // Create token
@@ -189,10 +211,8 @@ class UserController {
                 token
             });
         } catch (error) {
-            if (error instanceof AppError) {
-                throw error;
-            }
-            throw new AppError('Server error', 500);
+            console.error('Login error:', error);
+            res.status(500).json({ error: 'Server error' });
         }
     }
 

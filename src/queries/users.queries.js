@@ -10,6 +10,14 @@ module.exports = {
     SELECT * FROM users
     WHERE email = $1 AND deleted_at IS NULL
   `,
+  GET_USER_BY_USERNAME: `
+    SELECT * FROM users
+    WHERE username = $1 AND deleted_at IS NULL
+  `,
+  GET_USER_BY_MOBILE_NUMBER: `
+    SELECT * FROM users
+    WHERE mobile_number = $1 AND deleted_at IS NULL
+  `,
   GET_USER_BY_ID: `
     SELECT * FROM users
     WHERE id = $1 AND deleted_at IS NULL
